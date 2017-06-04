@@ -20,7 +20,10 @@ namespace REST.Controllers
         // GET: api/Teachers
         public IQueryable<Teacher> GetTeachers()
         {
-            return db.Teachers;
+            List<Teacher> teacherList = db.Teachers.ToList();
+            List<Teacher> resultList = teacherList.Select((Teacher teacher) => ToPOCO(teacher)).ToList();
+
+            return resultList.AsQueryable();
         }
 
         // GET: api/Teachers/5
@@ -33,7 +36,7 @@ namespace REST.Controllers
                 return NotFound();
             }
 
-            return Ok(teacher);
+            return Ok(ToPOCO(teacher));
         }
 
         // PUT: api/Teachers/5
@@ -80,10 +83,23 @@ namespace REST.Controllers
                 return BadRequest(ModelState);
             }
 
-            db.Teachers.Add(teacher);
-            db.SaveChanges();
+            if (!TryAttachCourses(teacher))
+            {
+                return Conflict();
+            }
 
-            return CreatedAtRoute("DefaultApi", new { id = teacher.Id }, teacher);
+            try
+            {
+                db.Teachers.Add(teacher);
+                db.SaveChanges();
+                teacher.Chair = db.Chairs.Find(teacher.ChairId);
+            }
+            catch (Exception ex) when (ex is ArgumentNullException || ex is DbUpdateException)
+            {
+                return Conflict();
+            }
+
+            return CreatedAtRoute("DefaultApi", new { id = teacher.Id }, ToPOCO(teacher));
         }
 
         // DELETE: api/Teachers/5
@@ -99,7 +115,7 @@ namespace REST.Controllers
             db.Teachers.Remove(teacher);
             db.SaveChanges();
 
-            return Ok(teacher);
+            return Ok();
         }
 
         protected override void Dispose(bool disposing)
@@ -114,6 +130,62 @@ namespace REST.Controllers
         private bool TeacherExists(int id)
         {
             return db.Teachers.Count(e => e.Id == id) > 0;
+        }
+
+        private bool TryAttachCourses(Teacher teacher)
+        {
+            if (teacher.Courses != null)
+            {
+                List<Course> courses = new List<Course>();
+
+                foreach (Course course in teacher.Courses)
+                {
+                    Course attachedCourse = db.Courses.Find(course.Id);
+                    if (attachedCourse == null)
+                    {
+                        return false;
+                    }
+                    courses.Add(attachedCourse);
+                }
+
+                teacher.Courses = courses;
+            }
+
+            return true;
+        }
+
+        private Teacher ToPOCO(Teacher teacher)
+        {
+            Chair teacherChair = null;
+            if (teacher.Chair != null)
+            {
+                teacherChair = new Chair();
+                teacherChair.Id = teacher.Chair.Id;
+                teacherChair.Name = teacher.Chair.Name;
+                teacherChair.FacultyId = teacher.Chair.FacultyId;
+                teacherChair.Faculty = null;
+                teacherChair.Teachers = null;
+            }
+
+            List<Course> coursesList = null;
+            if (teacher.Courses != null)
+            {
+                coursesList = teacher.Courses.Select((Course course) => new Course()
+                {
+                    Id = course.Id,
+                    Name = course.Name,
+                    Teachers = null
+                }).ToList();
+            }
+
+            return new Teacher()
+            {
+                Id = teacher.Id,
+                FullName = teacher.FullName,
+                ChairId = teacher.ChairId,
+                Chair = teacherChair,
+                Courses = coursesList
+            };
         }
     }
 }

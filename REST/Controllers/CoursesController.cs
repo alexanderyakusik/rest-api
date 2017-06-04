@@ -20,7 +20,10 @@ namespace REST.Controllers
         // GET: api/Courses
         public IQueryable<Course> GetCourses()
         {
-            return db.Courses;
+            List<Course> courseList = db.Courses.ToList();
+            List<Course> resultList = courseList.Select((Course course) => ToPOCO(course)).ToList();
+
+            return resultList.AsQueryable();
         }
 
         // GET: api/Courses/5
@@ -33,7 +36,7 @@ namespace REST.Controllers
                 return NotFound();
             }
 
-            return Ok(course);
+            return Ok(ToPOCO(course));
         }
 
         // PUT: api/Courses/5
@@ -80,10 +83,22 @@ namespace REST.Controllers
                 return BadRequest(ModelState);
             }
 
-            db.Courses.Add(course);
-            db.SaveChanges();
+            if (!TryAttachTeachers(course))
+            {
+                return Conflict();
+            }
 
-            return CreatedAtRoute("DefaultApi", new { id = course.Id }, course);
+            try
+            {
+                db.Courses.Add(course);
+                db.SaveChanges();
+            }
+            catch (Exception ex) when (ex is ArgumentNullException || ex is DbUpdateException)
+            {
+                return Conflict();
+            }
+
+            return CreatedAtRoute("DefaultApi", new { id = course.Id }, ToPOCO(course));
         }
 
         // DELETE: api/Courses/5
@@ -99,7 +114,7 @@ namespace REST.Controllers
             db.Courses.Remove(course);
             db.SaveChanges();
 
-            return Ok(course);
+            return Ok();
         }
 
         protected override void Dispose(bool disposing)
@@ -114,6 +129,51 @@ namespace REST.Controllers
         private bool CourseExists(int id)
         {
             return db.Courses.Count(e => e.Id == id) > 0;
+        }
+
+        private bool TryAttachTeachers(Course course)
+        {
+            if (course.Teachers != null)
+            {
+                List<Teacher> teachers = new List<Teacher>();
+
+                foreach (Teacher teacher in course.Teachers)
+                {
+                    Teacher attachedTeacher = db.Teachers.Find(teacher.Id);
+                    if (attachedTeacher == null)
+                    {
+                        return false;
+                    }
+                    teachers.Add(attachedTeacher);
+                }
+
+                course.Teachers = teachers;
+            }
+
+            return true;
+        }
+
+        private Course ToPOCO(Course course)
+        {
+            List<Teacher> teachersList = null;
+            if (course.Teachers != null)
+            {
+                teachersList = course.Teachers.Select((Teacher teacher) => new Teacher()
+                {
+                    Id = teacher.Id,
+                    FullName = teacher.FullName,
+                    ChairId = teacher.ChairId,
+                    Chair = null,
+                    Courses = null
+                }).ToList();
+            }
+
+            return new Course()
+            {
+                Id = course.Id,
+                Name = course.Name,
+                Teachers = teachersList
+            };
         }
     }
 }

@@ -80,8 +80,15 @@ namespace REST.Controllers
                 return BadRequest(ModelState);
             }
 
-            db.Faculties.Add(faculty);
-            db.SaveChanges();
+            try
+            {
+                db.Faculties.Add(faculty);
+                db.SaveChanges();
+            }
+            catch (Exception ex) when (ex is ArgumentNullException || ex is DbUpdateException)
+            {
+                return Conflict();
+            }
 
             return CreatedAtRoute("DefaultApi", new { id = faculty.Id }, faculty);
         }
@@ -99,7 +106,7 @@ namespace REST.Controllers
             db.Faculties.Remove(faculty);
             db.SaveChanges();
 
-            return Ok(faculty);
+            return Ok();
         }
 
         protected override void Dispose(bool disposing)
