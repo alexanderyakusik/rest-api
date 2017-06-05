@@ -88,6 +88,8 @@ namespace REST.Controllers
                 return Conflict();
             }
 
+            TryAttachFaculty(chair);
+
             try
             {
                 db.Chairs.Add(chair);
@@ -103,7 +105,7 @@ namespace REST.Controllers
         }
 
         // DELETE: api/Chairs/5
-        [ResponseType(typeof(Chair))]
+        [ResponseType(typeof(void))]
         public IHttpActionResult DeleteChair(int id)
         {
             Chair chair = db.Chairs.Find(id);
@@ -152,6 +154,17 @@ namespace REST.Controllers
             }
 
             return true;
+        }
+
+        private void TryAttachFaculty(Chair chair)
+        {
+            Faculty existingFaculty = db.Faculties.Find(chair.FacultyId);
+            if (existingFaculty == null)
+            {
+                return;
+            }
+
+            chair.Faculty = existingFaculty;
         }
 
         private Chair ToPOCO(Chair chair)

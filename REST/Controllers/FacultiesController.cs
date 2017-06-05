@@ -94,7 +94,7 @@ namespace REST.Controllers
         }
 
         // DELETE: api/Faculties/5
-        [ResponseType(typeof(Faculty))]
+        [ResponseType(typeof(void))]
         public IHttpActionResult DeleteFaculty(int id)
         {
             Faculty faculty = db.Faculties.Find(id);

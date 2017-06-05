@@ -88,6 +88,8 @@ namespace REST.Controllers
                 return Conflict();
             }
 
+            TryAttachChair(teacher);
+
             try
             {
                 db.Teachers.Add(teacher);
@@ -103,7 +105,7 @@ namespace REST.Controllers
         }
 
         // DELETE: api/Teachers/5
-        [ResponseType(typeof(Teacher))]
+        [ResponseType(typeof(void))]
         public IHttpActionResult DeleteTeacher(int id)
         {
             Teacher teacher = db.Teachers.Find(id);
@@ -152,6 +154,17 @@ namespace REST.Controllers
             }
 
             return true;
+        }
+
+        private void TryAttachChair(Teacher teacher)
+        {
+            Chair existingChair = db.Chairs.Find(teacher.ChairId);
+            if (existingChair == null)
+            {
+                return;
+            }
+
+            teacher.Chair = existingChair;
         }
 
         private Teacher ToPOCO(Teacher teacher)

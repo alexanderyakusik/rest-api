@@ -102,7 +102,7 @@ namespace REST.Controllers
         }
 
         // DELETE: api/Courses/5
-        [ResponseType(typeof(Course))]
+        [ResponseType(typeof(void))]
         public IHttpActionResult DeleteCourse(int id)
         {
             Course course = db.Courses.Find(id);
