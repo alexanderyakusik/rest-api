@@ -20,7 +20,10 @@ namespace REST.Controllers
         // GET: api/Faculties
         public IQueryable<Faculty> GetFaculties()
         {
-            return db.Faculties;
+            List<Faculty> faculties = db.Faculties.ToList();
+            List<Faculty> resultList = faculties.Select((Faculty f) => ToPOCO(f)).ToList();
+
+            return resultList.AsQueryable();
         }
 
         // GET: api/Faculties/5
@@ -33,7 +36,7 @@ namespace REST.Controllers
                 return NotFound();
             }
 
-            return Ok(faculty);
+            return Ok(ToPOCO(faculty));
         }
 
         // PUT: api/Faculties/5
@@ -45,12 +48,12 @@ namespace REST.Controllers
                 return BadRequest(ModelState);
             }
 
-            if (id != faculty.Id)
+            if (faculty == null)
             {
                 return BadRequest();
             }
 
-            db.Entry(faculty).State = EntityState.Modified;
+            UpdateFaculty(faculty, id);
 
             try
             {
@@ -80,6 +83,13 @@ namespace REST.Controllers
                 return BadRequest(ModelState);
             }
 
+            if ((faculty == null) || !ChairsExist(faculty))
+            {
+                return BadRequest();
+            }
+
+            AttachChairs(faculty);
+
             try
             {
                 db.Faculties.Add(faculty);
@@ -90,7 +100,7 @@ namespace REST.Controllers
                 return Conflict();
             }
 
-            return CreatedAtRoute("DefaultApi", new { id = faculty.Id }, faculty);
+            return CreatedAtRoute("DefaultApi", new { id = faculty.Id }, ToPOCO(faculty));
         }
 
         // DELETE: api/Faculties/5
@@ -109,6 +119,77 @@ namespace REST.Controllers
             return Ok();
         }
 
+        private Faculty ToPOCO(Faculty faculty)
+        {
+            List<Chair> chairs = null;
+            if (faculty.Chairs != null)
+            {
+                chairs = faculty.Chairs.Select((Chair c) => new Chair()
+                {
+                    Id = c.Id,
+                    FacultyId = c.FacultyId,
+                    Faculty = null,
+                    Name = c.Name,
+                    Teachers = null
+                }).ToList();
+            }
+
+            return new Faculty()
+            {
+                Id = faculty.Id,
+                Name = faculty.Name,
+                Chairs = chairs
+            };
+        }
+
+        private void UpdateChairs(Faculty updatingFaculty, Faculty faculty)
+        {
+            List<Chair> oldChairs = updatingFaculty.Chairs.ToList();
+
+            if (faculty.Chairs == null)
+            {
+                return;
+            }
+
+            List<Chair> chairs = new List<Chair>();
+            faculty.Chairs.ForEach( (Chair c) => chairs.Add(db.Chairs.Find(c.Id)) );
+
+            updatingFaculty.Chairs.Clear();
+            foreach (Chair chair in chairs)
+            {
+                updatingFaculty.Chairs.Add(chair);
+            }
+
+            oldChairs = oldChairs.Except(updatingFaculty.Chairs).ToList();
+            oldChairs.ForEach((Chair c) => db.Entry(c).State = EntityState.Deleted);
+        }
+
+        private void UpdateFaculty(Faculty faculty, int id)
+        {
+            Faculty updatingFaculty = db.Faculties.Include("Chairs").Single((Faculty f) => f.Id == id);
+            UpdateChairs(updatingFaculty, faculty);
+            if (faculty.Name != null)
+            {
+                updatingFaculty.Name = faculty.Name;
+            }
+        }
+
+        private void AttachChairs(Faculty faculty)
+        {
+            if (faculty.Chairs == null)
+            {
+                return;
+            }
+
+            List<Chair> chairs = new List<Chair>();
+            foreach (Chair chair in faculty.Chairs)
+            {
+                chairs.Add(db.Chairs.Find(chair.Id));
+            }
+
+            faculty.Chairs = chairs;
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)
@@ -121,6 +202,24 @@ namespace REST.Controllers
         private bool FacultyExists(int id)
         {
             return db.Faculties.Count(e => e.Id == id) > 0;
+        }
+
+        private bool ChairsExist(Faculty faculty)
+        {
+            if (faculty.Chairs == null)
+            {
+                return true;
+            }
+
+            foreach (Chair chair in faculty.Chairs)
+            {
+                if (db.Chairs.Find(chair.Id) == null)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 }

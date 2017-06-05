@@ -1,15 +1,14 @@
-﻿using System;
+﻿using REST.Models;
+using REST.Models.Entities;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Net;
-using System.Net.Http;
 using System.Web.Http;
 using System.Web.Http.Description;
-using REST.Models;
-using REST.Models.Entities;
 
 namespace REST.Controllers
 {
@@ -48,12 +47,12 @@ namespace REST.Controllers
                 return BadRequest(ModelState);
             }
 
-            if (id != chair.Id)
+            if (chair == null)
             {
                 return BadRequest();
             }
 
-            db.Entry(chair).State = EntityState.Modified;
+            UpdateChair(chair, id);
 
             try
             {
@@ -83,22 +82,22 @@ namespace REST.Controllers
                 return BadRequest(ModelState);
             }
 
-            if (!TryAttachTeachers(chair))
+            if ((chair == null) || !FacultyExists(chair) || !TeachersExist(chair))
             {
-                return Conflict();
+                return BadRequest();
             }
 
-            TryAttachFaculty(chair);
+            AttachFaculty(chair);
+            AttachTeachers(chair);
 
             try
             {
                 db.Chairs.Add(chair);
                 db.SaveChanges();
-                chair.Faculty = db.Faculties.Find(chair.FacultyId);
             }
             catch (Exception ex) when (ex is ArgumentNullException || ex is DbUpdateException)
             {
-                return Conflict();
+                return BadRequest();
             }
 
             return CreatedAtRoute("DefaultApi", new { id = chair.Id }, ToPOCO(chair));
@@ -134,37 +133,89 @@ namespace REST.Controllers
             return db.Chairs.Count(e => e.Id == id) > 0;
         }
 
-        private bool TryAttachTeachers(Chair chair)
+        private bool TeachersExist(Chair chair)
         {
-            if (chair.Teachers != null)
+            if (chair.Teachers == null)
             {
-                List<Teacher> teachers = new List<Teacher>();
+                return true;
+            }
 
-                foreach (Teacher teacher in chair.Teachers)
+            foreach (Teacher teacher in chair.Teachers)
+            {
+                if (db.Teachers.Find(teacher.Id) == null)
                 {
-                    Teacher attachedTeacher = db.Teachers.Find(teacher.Id);
-                    if (attachedTeacher == null)
-                    {
-                        return false;
-                    }
-                    teachers.Add(attachedTeacher);
+                    return false;
                 }
-
-                chair.Teachers = teachers;
             }
 
             return true;
         }
 
-        private void TryAttachFaculty(Chair chair)
+        private bool FacultyExists(Chair chair)
         {
-            Faculty existingFaculty = db.Faculties.Find(chair.FacultyId);
-            if (existingFaculty == null)
+            if (db.Faculties.Find(chair.FacultyId) == null)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private void AttachTeachers(Chair chair)
+        {
+            if (chair.Teachers == null)
             {
                 return;
             }
 
-            chair.Faculty = existingFaculty;
+            List<Teacher> teachers = new List<Teacher>();
+            foreach (Teacher teacher in chair.Teachers)
+            {
+                teachers.Add(db.Teachers.Find(teacher.Id));
+            }
+
+            chair.Teachers = teachers;
+        }
+
+        private void AttachFaculty(Chair chair)
+        {
+            chair.Faculty = db.Faculties.Find(chair.FacultyId);
+        }
+
+        private void UpdateTeachers(Chair updatingChair, Chair chair)
+        {
+            List<Teacher> oldTeachers = updatingChair.Teachers.ToList();
+
+            if (chair.Teachers == null)
+            {
+                return;
+            }
+
+            List<Teacher> teachers = new List<Teacher>();
+            chair.Teachers.ForEach( (Teacher t) => teachers.Add(db.Teachers.Find(t.Id)) );
+
+            updatingChair.Teachers.Clear();
+            foreach (Teacher teacher in teachers)
+            {
+                updatingChair.Teachers.Add(teacher);
+            }
+
+            oldTeachers = oldTeachers.Except(updatingChair.Teachers).ToList();
+            oldTeachers.ForEach((Teacher t) => db.Entry(t).State = EntityState.Deleted);
+        }
+
+        private void UpdateChair(Chair chair, int id)
+        {
+            Chair updatingChair = db.Chairs.Include("Teachers").Single((Chair c) => c.Id == id);
+            UpdateTeachers(updatingChair, chair);
+            if (chair.FacultyId != 0)
+            {
+                updatingChair.FacultyId = chair.FacultyId;
+            }
+            if (chair.Name != null)
+            {
+                updatingChair.Name = chair.Name;
+            }
         }
 
         private Chair ToPOCO(Chair chair)
@@ -182,12 +233,23 @@ namespace REST.Controllers
                 }).ToList();
             }
 
+            Faculty faculty = null;
+            if (chair.Faculty != null)
+            {
+                faculty = new Faculty()
+                {
+                    Id = chair.Faculty.Id,
+                    Name = chair.Faculty.Name,
+                    Chairs = null
+                };
+            }
+
             return new Chair()
             {
                 Id = chair.Id,
                 Name = chair.Name,
                 FacultyId = chair.FacultyId,
-                Faculty = chair.Faculty,
+                Faculty = faculty,
                 Teachers = teachersList
             };
         }

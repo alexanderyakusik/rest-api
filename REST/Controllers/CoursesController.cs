@@ -1,15 +1,13 @@
-﻿using System;
+﻿using REST.Models;
+using REST.Models.Entities;
+using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Net;
-using System.Net.Http;
 using System.Web.Http;
 using System.Web.Http.Description;
-using REST.Models;
-using REST.Models.Entities;
 
 namespace REST.Controllers
 {
@@ -48,12 +46,12 @@ namespace REST.Controllers
                 return BadRequest(ModelState);
             }
 
-            if (id != course.Id)
+            if (course == null)
             {
                 return BadRequest();
             }
 
-            db.Entry(course).State = EntityState.Modified;
+            UpdateCourse(course, id);
 
             try
             {
@@ -83,10 +81,12 @@ namespace REST.Controllers
                 return BadRequest(ModelState);
             }
 
-            if (!TryAttachTeachers(course))
+            if ((course == null) || !TeachersExist(course))
             {
-                return Conflict();
+                return BadRequest();
             }
+
+            AttachTeachers(course);
 
             try
             {
@@ -95,7 +95,7 @@ namespace REST.Controllers
             }
             catch (Exception ex) when (ex is ArgumentNullException || ex is DbUpdateException)
             {
-                return Conflict();
+                return BadRequest();
             }
 
             return CreatedAtRoute("DefaultApi", new { id = course.Id }, ToPOCO(course));
@@ -131,26 +131,65 @@ namespace REST.Controllers
             return db.Courses.Count(e => e.Id == id) > 0;
         }
 
-        private bool TryAttachTeachers(Course course)
+        private bool TeachersExist(Course course)
         {
-            if (course.Teachers != null)
+            if (course.Teachers == null)
             {
-                List<Teacher> teachers = new List<Teacher>();
+                return true;
+            }
 
-                foreach (Teacher teacher in course.Teachers)
+            foreach (Teacher teacher in course.Teachers)
+            {
+                if (db.Teachers.Find(teacher.Id) == null)
                 {
-                    Teacher attachedTeacher = db.Teachers.Find(teacher.Id);
-                    if (attachedTeacher == null)
-                    {
-                        return false;
-                    }
-                    teachers.Add(attachedTeacher);
+                    return false;
                 }
-
-                course.Teachers = teachers;
             }
 
             return true;
+        }
+
+        private void AttachTeachers(Course course)
+        {
+            if (course.Teachers == null)
+            {
+                return;
+            }
+
+            List<Teacher> teachers = new List<Teacher>();
+            foreach (Teacher teacher in course.Teachers)
+            {
+                teachers.Add(db.Teachers.Find(teacher.Id));
+            }
+
+            course.Teachers = teachers;
+        }
+
+        private void UpdateTeachers(Course updatingCourse, Course course)
+        {
+            if (course.Teachers == null)
+            { 
+                return;
+            }
+
+            List<Teacher> teachers = new List<Teacher>();
+            course.Teachers.ForEach( (Teacher t) => teachers.Add(db.Teachers.Find(t.Id)) );
+
+            updatingCourse.Teachers.Clear();
+            foreach (Teacher teacher in teachers)
+            {
+                updatingCourse.Teachers.Add(teacher);
+            }
+        }
+
+        private void UpdateCourse(Course course, int id)
+        {
+            Course updatingCourse = db.Courses.Include("Teachers").Single((Course c) => c.Id == id);
+            UpdateTeachers(updatingCourse, course);
+            if (course.Name != null)
+            {
+                updatingCourse.Name = course.Name;
+            }
         }
 
         private Course ToPOCO(Course course)
